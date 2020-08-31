@@ -25,10 +25,14 @@ func htmlpath(mdpath string) string {
 	}
 
 	dir, mdfile := path.Split(mdpath)
+	// uppercase to lowercase
 	x := uchars.ReplaceAllStringFunc(mdfile, strings.ToLower)
 	if x == "readme.md" {
 		x = "index.md"
 	}
+
+	// underscores to dashes
+	x = strings.ReplaceAll(x, "_", "-")
 
 	return path.Join(dir, x[0:len(x)-3] + ".html")
 }
