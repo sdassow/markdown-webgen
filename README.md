@@ -4,7 +4,7 @@ Golang based Markdown website generator.
 
 ## SYNOPSIS
 
-markdown-webgen [-destdir dir] [-assetdir dir] mdfile [mdfile ...]
+markdown-webgen [-destdir dir] [-assetdir dir] [-quiet] mdfile [mdfile ...]
 
 ## DESCRIPTION
 
