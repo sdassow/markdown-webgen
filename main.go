@@ -186,7 +186,7 @@ func main() {
 	var tmplfile string
 
 	flag.StringVar(&destdir, "destdir", "", "destination directory for output files")
-	flag.StringVar(&assetdir, "assetdir", "assets", "asset source directory")
+	flag.StringVar(&assetdir, "assetdir", "", "asset source directory")
 	flag.StringVar(&tmplfile, "tmplfile", "template.html", "html template")
 	flag.BoolVar(&quiet, "quiet", false, "hide detailed log output")
 	flag.Parse()
@@ -277,6 +277,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+
+	// all done without assets to copy
+	if assetdir == "" {
+		return
 	}
 
 	if !quiet {
