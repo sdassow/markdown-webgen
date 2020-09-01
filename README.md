@@ -4,7 +4,7 @@ Golang based Markdown website generator.
 
 ## SYNOPSIS
 
-markdown-webgen [-destdir dir] [-assetdir dir] [-quiet] mdfile [mdfile ...]
+markdown-webgen [-destdir dir] [-assetdir dir] [-tmplfile file] [-quiet] mdfile [mdfile ...]
 
 ## DESCRIPTION
 
@@ -16,7 +16,9 @@ The options are as follows:
 
  * -destdir dir - Destination directory to write all resulting files to, defaults to the same directory as the source file
 
- * -assetdir - Directory with additional files to copy to the destination directory, unset by default.
+ * -assetdir - Directory with additional files to copy to the destination directory, unset by default
+ 
+ * -tmplfile - Template file to use, defaults to `template.html`
 
  * -quiet - Avoid printing detailed output
 
