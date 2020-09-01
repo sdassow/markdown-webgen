@@ -1,4 +1,4 @@
-module github.com/sdassow/awesome-veganism-web
+module github.com/sdassow/awesome-veganism-webgen
 
 go 1.14
 
