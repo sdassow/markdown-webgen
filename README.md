@@ -21,3 +21,7 @@ The options are as follows:
  * `-tmplfile file` - Template file to use, defaults to `template.html`
 
  * `-quiet` - Avoid printing detailed output
+
+## LICENSE
+
+[MIT](LICENSE.md)
