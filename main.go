@@ -59,7 +59,7 @@ func writeResult(tpl *template.Template, html string, file string) ([]byte, erro
 	h := sha1.New()
 	w := io.MultiWriter(b, h)
 
-	if err := tpl.ExecuteTemplate(w, "template.html", &data); err != nil {
+	if err := tpl.ExecuteTemplate(w, tpl.Name(), &data); err != nil {
 		return nil, err
 	}
 	srcsum := h.Sum(nil)
@@ -198,7 +198,7 @@ func main() {
 	args := flag.Args()
 	files = append(files, args...)
 
-	tpl, err := template.New("template.html").ParseFiles(tmplfile)
+	tpl, err := template.ParseFiles(tmplfile)
 	if err != nil {
 		log.Fatal(err)
 	}
