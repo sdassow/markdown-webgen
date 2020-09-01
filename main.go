@@ -1,32 +1,41 @@
 package main
 
 import (
-	//"path/filepath"
-	"log"
 	"bytes"
-	"io/ioutil"
-	"path"
+	"crypto/sha1"
+	"encoding/hex"
 	"flag"
-	"regexp"
-	"strings"
-	"sort"
+	"fmt"
 	"html/template"
+	"io"
+	"io/ioutil"
+	"log"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/russross/blackfriday/v2"
 	"github.com/sbertrang/atomic"
 )
 
-var uchars = regexp.MustCompile(`[A-Z]+`)
+var quiet bool = false
+var upre = regexp.MustCompile(`[A-Z]+`)
 
 func htmlpath(mdpath string) string {
+	// only change .md extension
 	if mdpath[len(mdpath)-3:len(mdpath)] != ".md" {
 		return mdpath
 	}
 
+	// only treat the filename
 	dir, mdfile := path.Split(mdpath)
+
 	// uppercase to lowercase
-	x := uchars.ReplaceAllStringFunc(mdfile, strings.ToLower)
+	x := upre.ReplaceAllStringFunc(mdfile, strings.ToLower)
 	if x == "readme.md" {
 		x = "index.md"
 	}
@@ -34,22 +43,115 @@ func htmlpath(mdpath string) string {
 	// underscores to dashes
 	x = strings.ReplaceAll(x, "_", "-")
 
-	return path.Join(dir, x[0:len(x)-3] + ".html")
+	// same direcory, new basename, new extension
+	return path.Join(dir, x[0:len(x)-3]+".html")
 }
 
-func writeResult(tpl *template.Template, html string, file string) error {
-	buf := bytes.NewBuffer([]byte{})
-	data := struct{
+func writeResult(tpl *template.Template, html string, file string) ([]byte, error) {
+	data := struct {
 		Body template.HTML
 	}{
 		Body: template.HTML(html),
 	}
 
-	if err := tpl.ExecuteTemplate(buf, "template.html", &data); err != nil {
+	// get bytes and checksum at once
+	b := bytes.NewBuffer([]byte{})
+	h := sha1.New()
+	w := io.MultiWriter(b, h)
+
+	if err := tpl.ExecuteTemplate(w, "template.html", &data); err != nil {
+		return nil, err
+	}
+	srcsum := h.Sum(nil)
+
+	// try to open target
+	f, err := os.Open(file)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	// compare if target exists
+	if f != nil {
+		h := sha1.New()
+		if _, err := io.Copy(h, f); err != nil {
+			f.Close()
+			return nil, err
+		}
+		f.Close()
+		dstsum := h.Sum(nil)
+
+		// all done when both are the same
+		if bytes.Equal(dstsum, srcsum) {
+			if !quiet {
+				log.Printf("same checksum: %s (%s)", file, hex.EncodeToString(dstsum))
+			}
+			return dstsum, nil
+		}
+	}
+
+	if !quiet {
+		log.Printf("updating file: %s (%s)", file, hex.EncodeToString(srcsum))
+	}
+
+	if err := atomic.WriteFile(file, b); err != nil {
+		return nil, err
+	}
+
+	return srcsum, nil
+}
+
+func copyFile(src, dst string) error {
+	fin, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer fin.Close()
+
+	finstat, err := fin.Stat()
+	if err != nil {
+		return err
+	}
+	if !finstat.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", src)
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	h := sha1.New()
+	w := io.MultiWriter(buf, h)
+	if _, err := io.Copy(w, fin); err != nil {
+		return err
+	}
+	finsum := h.Sum(nil)
+
+	// check destination
+	fout, err := os.Open(dst)
+	// it's okay for files to not exist, the rest is not
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	if err := atomic.WriteFile(file, buf); err != nil {
+	// get previous checksum
+	if fout != nil {
+		defer fout.Close()
+		h := sha1.New()
+		if _, err := io.Copy(h, fout); err != nil {
+			return err
+		}
+		foutsum := h.Sum(nil)
+
+		// same checksum, we're good
+		if bytes.Equal(foutsum, finsum) {
+			if !quiet {
+				log.Printf("same checksum: %s (%s)", dst, hex.EncodeToString(finsum))
+			}
+			return nil
+		}
+	}
+
+	if !quiet {
+		log.Printf("updating file: %s (%s)", dst, hex.EncodeToString(finsum))
+	}
+
+	if err := atomic.WriteFile(dst, buf); err != nil {
 		return err
 	}
 
@@ -58,19 +160,36 @@ func writeResult(tpl *template.Template, html string, file string) error {
 
 type MarkdownFile struct {
 	Content []byte
-	Path	string
-	Dir	string
-	Name	string
+	Path    string
+	Dir     string
+	Name    string
+}
+
+type AssetFile struct {
+	Path string
+	Info os.FileInfo
+}
+
+func usage() {
+	progname, err := os.Executable()
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, progname = path.Split(progname)
+	fmt.Fprintf(os.Stderr, "usage: %s [-destdir dir] [-assetdir dir] [-tmplfile file] md [md ...]\n", progname)
+	os.Exit(1)
 }
 
 func main() {
 	var destdir string
+	var assetdir string
 	var tmplfile string
 
 	flag.StringVar(&destdir, "destdir", "", "destination directory for output files")
+	flag.StringVar(&assetdir, "assetdir", "assets", "asset source directory")
 	flag.StringVar(&tmplfile, "tmplfile", "template.html", "html template")
+	flag.BoolVar(&quiet, "quiet", false, "hide detailed log output")
 	flag.Parse()
-
 
 	files := make([]string, 0)
 	data := make(map[string]MarkdownFile)
@@ -79,10 +198,17 @@ func main() {
 	args := flag.Args()
 	files = append(files, args...)
 
-	//tmplfile := "template.html"
 	tpl, err := template.New("template.html").ParseFiles(tmplfile)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if len(files) == 0 {
+		usage()
+	}
+
+	if !quiet {
+		log.Println("reading input...")
 	}
 
 	re := regexp.MustCompile("([^()]+\\.md)")
@@ -94,7 +220,6 @@ func main() {
 
 		_, found := data[fpath]
 		if found {
-			log.Printf("saw %s already, skipping", fpath)
 			continue
 		}
 		xmap[file] = fpath
@@ -105,9 +230,9 @@ func main() {
 		}
 		data[fpath] = MarkdownFile{
 			Content: content,
-			Path: fpath,
-			Dir: dir,
-			Name: file,
+			Path:    fpath,
+			Dir:     dir,
+			Name:    file,
 		}
 
 		datafiles := re.FindAllString(string(content), -1)
@@ -116,7 +241,9 @@ func main() {
 			files = append(files, path.Join(dir, datafile))
 		}
 
-		log.Printf("found markdown file: %s", file)
+		if !quiet {
+			log.Printf("found markdown: %s", file)
+		}
 	}
 
 	files = nil
@@ -127,13 +254,16 @@ func main() {
 
 	hre := regexp.MustCompile(`href="[^"]+\.md"`)
 
+	if !quiet {
+		log.Println("generating html...")
+	}
+
 	for _, file := range files {
 		unsafe := blackfriday.Run([]byte(data[file].Content))
 		html := bluemonday.UGCPolicy().SanitizeBytes(unsafe)
 
 		newhtml := hre.ReplaceAllStringFunc(string(html), func(in string) string {
-			//log.Printf("repl: %s", in)
-			f := in[6:len(in)-1]
+			f := in[6 : len(in)-1]
 			return `href="` + htmlpath(f) + `"`
 		})
 
@@ -143,35 +273,50 @@ func main() {
 			destpath = path.Join(destdir, base)
 		}
 
-		log.Printf("writing result: %s", destpath)
-
-		if err := writeResult(tpl, newhtml, destpath); err != nil {
+		_, err := writeResult(tpl, newhtml, destpath)
+		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-/*
+	if !quiet {
+		log.Printf("scanning for assets: %s\n", assetdir)
+	}
 
-	log.Printf("walk dir: %s\n", dir)
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	assets := make([]AssetFile, 0)
+	if err := filepath.Walk(assetdir, func(file string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		//if info.IsDir() {
-		//	return filepath.SkipDir
-		//}
-		files = append(files, path)
+		if info.Name()[0:1] == "." || info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(assetdir, file)
+		if err != nil {
+			log.Fatal(err)
+		}
+		assets = append(assets, AssetFile{
+			Path: rel,
+			Info: info,
+		})
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		log.Fatal(err)
 	}
 
-	for _, info := range files {
-		log.Printf("info: %+v", info)
+	for _, asset := range assets {
+		dst := path.Join(destdir, asset.Path)
+		dir, _ := path.Split(dst)
+		if dir != destdir {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		src := path.Join(assetdir, asset.Path)
+		if err := copyFile(src, dst); err != nil {
+			log.Fatal(err)
+		}
 	}
-
-*/
-
 
 }
