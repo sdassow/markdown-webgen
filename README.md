@@ -14,11 +14,10 @@ to point to the corresponding html files.
 
 The options are as follows:
 
- * -destdir dir - Destination directory to write all resulting files to, defaults to the same directory as the source file
+ * `-destdir dir` - Destination directory to write all resulting files to, defaults to the same directory as the source file
 
- * -assetdir - Directory with additional files to copy to the destination directory, unset by default
+ * `-assetdir dir` - Directory with additional files to copy to the destination directory, unset by default
  
- * -tmplfile - Template file to use, defaults to `template.html`
+ * `-tmplfile file` - Template file to use, defaults to `template.html`
 
- * -quiet - Avoid printing detailed output
-
+ * `-quiet` - Avoid printing detailed output
