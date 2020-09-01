@@ -1,6 +1,6 @@
-module github.com/sdassow/awesome-veganism-webgen
+module github.com/sdassow/markdown-webgen
 
-go 1.14
+go 1.13
 
 require (
 	github.com/microcosm-cc/bluemonday v1.0.4
