@@ -258,9 +258,18 @@ func main() {
 		log.Println("generating html...")
 	}
 
+	renderer := blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{
+		Flags: blackfriday.CommonHTMLFlags|blackfriday.HrefTargetBlank,
+	})
+	p := bluemonday.UGCPolicy()
+	p.AllowAttrs("target").Matching(regexp.MustCompile(`^_blank$`)).OnElements("a")
+
 	for _, file := range files {
-		unsafe := blackfriday.Run([]byte(data[file].Content))
-		html := bluemonday.UGCPolicy().SanitizeBytes(unsafe)
+		unsafe := blackfriday.Run([]byte(data[file].Content),
+			blackfriday.WithExtensions(blackfriday.CommonExtensions|blackfriday.NoEmptyLineBeforeBlock|blackfriday.AutoHeadingIDs),
+			blackfriday.WithRenderer(renderer),
+		)
+		html := p.SanitizeBytes(unsafe)
 
 		newhtml := hre.ReplaceAllStringFunc(string(html), func(in string) string {
 			f := in[6 : len(in)-1]
