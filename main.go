@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/russross/blackfriday/v2"
@@ -47,11 +48,13 @@ func htmlpath(mdpath string) string {
 	return path.Join(dir, x[0:len(x)-3]+".html")
 }
 
-func writeResult(tpl *template.Template, html string, file string) ([]byte, error) {
+func writeResult(tpl *template.Template, html string, file string, modtime time.Time) ([]byte, error) {
 	data := struct {
-		Body template.HTML
+		Body         template.HTML
+		DateModified time.Time
 	}{
-		Body: template.HTML(html),
+		Body:         template.HTML(html),
+		DateModified: modtime,
 	}
 
 	// get bytes and checksum at once
@@ -159,10 +162,11 @@ func copyFile(src, dst string) error {
 }
 
 type MarkdownFile struct {
-	Content []byte
-	Path    string
-	Dir     string
-	Name    string
+	Content      []byte
+	Path         string
+	Dir          string
+	Name         string
+	DateModified time.Time
 }
 
 type AssetFile struct {
@@ -228,11 +232,16 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		fi, err := os.Stat(fpath)
+		if err != nil {
+			log.Fatal(err)
+		}
 		data[fpath] = MarkdownFile{
-			Content: content,
-			Path:    fpath,
-			Dir:     dir,
-			Name:    file,
+			Content:      content,
+			Path:         fpath,
+			Dir:          dir,
+			Name:         file,
+			DateModified: fi.ModTime(),
 		}
 
 		datafiles := re.FindAllString(string(content), -1)
@@ -259,7 +268,7 @@ func main() {
 	}
 
 	renderer := blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{
-		Flags: blackfriday.CommonHTMLFlags|blackfriday.HrefTargetBlank,
+		Flags: blackfriday.CommonHTMLFlags | blackfriday.HrefTargetBlank,
 	})
 	p := bluemonday.UGCPolicy()
 	p.AllowAttrs("target").Matching(regexp.MustCompile(`^_blank$`)).OnElements("a")
@@ -282,7 +291,7 @@ func main() {
 			destpath = path.Join(destdir, base)
 		}
 
-		_, err := writeResult(tpl, newhtml, destpath)
+		_, err := writeResult(tpl, newhtml, destpath, data[file].DateModified)
 		if err != nil {
 			log.Fatal(err)
 		}
