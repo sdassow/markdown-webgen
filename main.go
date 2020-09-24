@@ -95,7 +95,7 @@ func writeResult(tpl *template.Template, html string, file string, modtime time.
 		log.Printf("updating file: %s (%s)", file, hex.EncodeToString(srcsum))
 	}
 
-	if err := atomic.WriteFile(file, b); err != nil {
+	if err := atomic.WriteFile(file, b, 0644); err != nil {
 		return nil, err
 	}
 
@@ -154,7 +154,7 @@ func copyFile(src, dst string) error {
 		log.Printf("updating file: %s (%s)", dst, hex.EncodeToString(finsum))
 	}
 
-	if err := atomic.WriteFile(dst, buf); err != nil {
+	if err := atomic.WriteFile(dst, buf, 0644); err != nil {
 		return err
 	}
 
